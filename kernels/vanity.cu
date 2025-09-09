@@ -191,7 +191,14 @@ __global__ void gpu_vanity_search(const uint8_t* seed, const char* target, uint6
             printf("GPU thread %llu iter %llu: %s (len=%lu, target_len=%llu)\n", 
                    (unsigned long long)idx, (unsigned long long)iter, base58_pubkey, base58_len, 
                    (unsigned long long)target_len);
-            printf("  Target bytes: %c%c%c\n", target[0], target[1], target[2]);
+            if (target_len >= 3) {
+                printf("  Target bytes: %c%c%c\n", target[0], target[1], target[2]);
+            }
+        }
+        
+        // Extra debug: check if we ever get close to a match
+        if (target_len > 0 && base58_pubkey[0] == 'a') {
+            printf("GPU found 'a' prefix: %s\n", base58_pubkey);
         }
         
         if (matches) {

@@ -256,6 +256,6 @@ fn new_gpu_seed(gpu_id: u32, iteration: u64) -> [u8; 32] {
 
 fn maybe_update_num_cpus(num_cpus: &mut u32) {
     if *num_cpus == 0 {
-        *num_cpus = rayon::current_num_threads() as u32;
+        *num_cpus = 0; // Force to 0 when testing GPU only
     }
 }
