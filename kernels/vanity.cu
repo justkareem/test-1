@@ -144,78 +144,21 @@ __device__ uint64_t gpu_iterations = 0;
 __global__ void gpu_vanity_search(const uint8_t* seed, const char* target, uint64_t target_len, uint64_t max_iterations) {
     uint64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     
-    // Early exit if result already found
-    if (gpu_found) return;
-    
-    // Initialize random state per thread
-    xorshift128plus_state rng_state;
-    init_xorshift(rng_state, seed, idx);
-    
-    for (uint64_t iter = 0; iter < max_iterations && !gpu_found; iter++) {
-        // Generate random 32-byte private key
-        uint8_t private_key[32];
-        for (int i = 0; i < 4; i++) {
-            uint64_t rand_val = xorshift128plus_next(rng_state);
-            memcpy(&private_key[i * 8], &rand_val, 8);
-        }
-        
-        // Generate public key (add more entropy to make it more realistic)
-        uint8_t public_key[32];
-        CUDA_SHA256_CTX ctx;
-        cuda_sha256_init(&ctx);
-        cuda_sha256_update(&ctx, private_key, 32);
-        cuda_sha256_update(&ctx, (uint8_t*)&idx, sizeof(uint64_t));
-        cuda_sha256_update(&ctx, (uint8_t*)&iter, sizeof(uint64_t));
-        cuda_sha256_final(&ctx, public_key);
-        
-        // Convert to base58
-        unsigned char base58_pubkey[64];
-        ulong base58_len = fd_base58_encode_32(public_key, base58_pubkey, false);
-        
-        // Null terminate base58 for debugging
-        base58_pubkey[base58_len] = '\0';
-        
-        // Check if matches target prefix
-        bool matches = (target_len <= base58_len);
-        if (matches && target_len > 0) {
-            for (uint64_t i = 0; i < target_len; i++) {
-                if (base58_pubkey[i] != (unsigned char)target[i]) {
-                    matches = false;
-                    break;
-                }
-            }
-        }
-        
-        // Debug: Print first few keypairs to see if we're generating valid ones
-        if (idx == 0 && iter < 3) {
-            printf("GPU thread %llu iter %llu: %s (len=%lu, target_len=%llu)\n", 
-                   (unsigned long long)idx, (unsigned long long)iter, base58_pubkey, base58_len, 
-                   (unsigned long long)target_len);
-            if (target_len >= 3) {
-                printf("  Target bytes: %c%c%c\n", target[0], target[1], target[2]);
-            }
-        }
-        
-        // Extra debug: check if we ever get close to a match
-        if (target_len > 0 && base58_pubkey[0] == 'a') {
-            printf("GPU found 'a' prefix: %s\n", base58_pubkey);
-        }
-        
-        if (matches) {
-            // Atomic check-and-set to ensure only first thread writes result
-            int was_found = atomicExch(&gpu_found, 1);
-            if (was_found == 0) {
-                // Copy result to global memory
-                memcpy(gpu_result, private_key, 32);
-                memcpy(gpu_result + 32, public_key, 32);
-                atomicAdd((unsigned long long*)&gpu_iterations, iter + 1);
-            }
-            return;
+    // Test basic functionality first
+    if (idx == 0) {
+        printf("GPU kernel started, target_len=%llu\n", (unsigned long long)target_len);
+        if (target_len >= 3) {
+            printf("Target: %c%c%c\n", target[0], target[1], target[2]);
         }
     }
     
-    // Add iterations even if no match found
-    atomicAdd((unsigned long long*)&gpu_iterations, max_iterations);
+    // Just run a few iterations to test
+    if (idx < 10) {
+        printf("GPU thread %llu running\n", (unsigned long long)idx);
+    }
+    
+    // Early exit for now - don't do the full computation yet
+    return;
 }
 
 extern "C" void vanity_keypair_round(
