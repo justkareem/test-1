@@ -170,13 +170,25 @@ __global__ void gpu_vanity_search(const uint8_t* seed, const char* target, uint6
         unsigned char base58_pubkey[64];
         ulong base58_len = fd_base58_encode_32(public_key, base58_pubkey, false);
         
+        // Null terminate base58 for debugging
+        base58_pubkey[base58_len] = '\0';
+        
         // Check if matches target prefix
-        bool matches = true;
-        for (uint64_t i = 0; i < target_len && i < base58_len; i++) {
-            if (base58_pubkey[i] != (unsigned char)target[i]) {
-                matches = false;
-                break;
+        bool matches = (target_len <= base58_len);
+        if (matches && target_len > 0) {
+            for (uint64_t i = 0; i < target_len; i++) {
+                if (base58_pubkey[i] != (unsigned char)target[i]) {
+                    matches = false;
+                    break;
+                }
             }
+        }
+        
+        // Debug: Print first few keypairs to see if we're generating valid ones
+        if (idx == 0 && iter < 3) {
+            printf("GPU thread %llu iter %llu: %s (len=%lu, target_len=%llu, target='%.*s')\n", 
+                   (unsigned long long)idx, (unsigned long long)iter, base58_pubkey, base58_len, 
+                   (unsigned long long)target_len, (int)target_len, target);
         }
         
         if (matches) {
