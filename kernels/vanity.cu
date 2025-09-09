@@ -137,7 +137,7 @@ __device__ bool matches_target(unsigned char *a, unsigned char *target, uint64_t
 }
 
 // Simple GPU globals for result storage
-__device__ bool gpu_found = false;
+__device__ int gpu_found = 0;  // Use int instead of bool for atomics
 __device__ uint8_t gpu_result[64]; // 32 bytes private + 32 bytes public
 __device__ uint64_t gpu_iterations = 0;
 
@@ -181,8 +181,8 @@ __global__ void gpu_vanity_search(const uint8_t* seed, const char* target, uint6
         
         if (matches) {
             // Atomic check-and-set to ensure only first thread writes result
-            bool was_found = atomicExch(&gpu_found, true);
-            if (!was_found) {
+            int was_found = atomicExch(&gpu_found, 1);
+            if (was_found == 0) {
                 // Copy result to global memory
                 memcpy(gpu_result, private_key, 32);
                 memcpy(gpu_result + 32, public_key, 32);
@@ -210,9 +210,9 @@ extern "C" void vanity_keypair_round(
     cudaSetDevice(gpu_id);
     
     // Reset GPU state
-    bool found_init = false;
+    int found_init = 0;
     uint64_t iter_init = 0;
-    cudaMemcpyToSymbol(gpu_found, &found_init, sizeof(bool));
+    cudaMemcpyToSymbol(gpu_found, &found_init, sizeof(int));
     cudaMemcpyToSymbol(gpu_iterations, &iter_init, sizeof(uint64_t));
     
     // Launch kernel with reasonable block/thread counts
@@ -226,9 +226,9 @@ extern "C" void vanity_keypair_round(
     cudaDeviceSynchronize();
     
     // Check if we found a result
-    bool found;
+    int found;
     uint64_t total_iterations;
-    cudaMemcpyFromSymbol(&found, gpu_found, sizeof(bool));
+    cudaMemcpyFromSymbol(&found, gpu_found, sizeof(int));
     cudaMemcpyFromSymbol(&total_iterations, gpu_iterations, sizeof(uint64_t));
     
     if (found) {
