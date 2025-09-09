@@ -186,21 +186,25 @@ extern "C" void vanity_keypair_round(
     uint64_t max_iter_per_thread = 1000000; // 1M iterations per thread
     
     printf("Launching GPU kernel with %d blocks, %d threads per block\n", num_blocks, threads_per_block);
+    printf("Target string: '%.10s' (len=%llu)\n", target, (unsigned long long)target_len);
     
     gpu_vanity_search<<<num_blocks, threads_per_block>>>(seed, target, target_len, max_iter_per_thread);
     
-    // Wait for completion and check for errors
-    cudaError_t sync_err = cudaDeviceSynchronize();
-    if (sync_err != cudaSuccess) {
-        printf("CUDA kernel error: %s\n", cudaGetErrorString(sync_err));
-        return;
-    }
-    
+    // Check launch error immediately
     cudaError_t launch_err = cudaGetLastError();
     if (launch_err != cudaSuccess) {
         printf("CUDA kernel launch error: %s\n", cudaGetErrorString(launch_err));
         return;
     }
+    
+    // Wait for completion and check for errors
+    printf("Waiting for GPU kernel to complete...\n");
+    cudaError_t sync_err = cudaDeviceSynchronize();
+    if (sync_err != cudaSuccess) {
+        printf("CUDA kernel execution error: %s\n", cudaGetErrorString(sync_err));
+        return;
+    }
+    printf("GPU kernel completed\n");
     
     // Check if we found a result
     int found;
