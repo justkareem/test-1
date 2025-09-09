@@ -104,16 +104,17 @@ fn main() {
                         if count > 0 {
                             let pubkey = fd_bs58::encode_32(public_key_bytes);
                             let out_str_target_check = maybe_bs58_aware_lowercase(&pubkey, args.case_insensitive);
-                            
-                            logfather::info!(
-                                "{} found in {:.3} seconds on gpu {gpu_index:>3}; {:>13} iters; {:>12} iters/sec",
-                                &pubkey,
-                                time_sec,
-                                count.to_formatted_string(&Locale::en),
-                                ((count as f64 / time_sec) as u64).to_formatted_string(&Locale::en)
-                            );
 
+                            // Only log if it actually matches the target (GPU should have filtered this)
                             if out_str_target_check.starts_with(prefix) && out_str_target_check.ends_with(suffix) {
+                                logfather::info!(
+                                    "{} found in {:.3} seconds on gpu {gpu_index:>3}; {:>13} iters; {:>12} iters/sec",
+                                    &pubkey,
+                                    time_sec,
+                                    count.to_formatted_string(&Locale::en),
+                                    ((count as f64 / time_sec) as u64).to_formatted_string(&Locale::en)
+                                );
+
                                 let private_key_b58 = fd_bs58::encode_32(private_key_bytes);
                                 logfather::info!("Public Key: {}", pubkey);
                                 logfather::info!("Private Key (for Phantom/wallet import): {}", private_key_b58);
