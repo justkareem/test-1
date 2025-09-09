@@ -159,11 +159,13 @@ __global__ void gpu_vanity_search(const uint8_t* seed, const char* target, uint6
             memcpy(&private_key[i * 8], &rand_val, 8);
         }
         
-        // Generate public key (simplified - just hash private key)
+        // Generate public key (add more entropy to make it more realistic)
         uint8_t public_key[32];
         CUDA_SHA256_CTX ctx;
         cuda_sha256_init(&ctx);
         cuda_sha256_update(&ctx, private_key, 32);
+        cuda_sha256_update(&ctx, (uint8_t*)&idx, sizeof(uint64_t));
+        cuda_sha256_update(&ctx, (uint8_t*)&iter, sizeof(uint64_t));
         cuda_sha256_final(&ctx, public_key);
         
         // Convert to base58
@@ -186,9 +188,10 @@ __global__ void gpu_vanity_search(const uint8_t* seed, const char* target, uint6
         
         // Debug: Print first few keypairs to see if we're generating valid ones
         if (idx == 0 && iter < 3) {
-            printf("GPU thread %llu iter %llu: %s (len=%lu, target_len=%llu, target='%.*s')\n", 
+            printf("GPU thread %llu iter %llu: %s (len=%lu, target_len=%llu)\n", 
                    (unsigned long long)idx, (unsigned long long)iter, base58_pubkey, base58_len, 
-                   (unsigned long long)target_len, (int)target_len, target);
+                   (unsigned long long)target_len);
+            printf("  Target bytes: %c%c%c\n", target[0], target[1], target[2]);
         }
         
         if (matches) {
