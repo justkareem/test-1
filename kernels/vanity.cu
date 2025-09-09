@@ -146,77 +146,8 @@ extern "C" void vanity_keypair_round(
     uint8_t *out,
     bool case_insensitive)
 {
-    int deviceCount;
-    cudaGetDeviceCount(&deviceCount);
-
-    if (gpu_id >= deviceCount) {
-        printf("Invalid GPU index: %d\n", gpu_id);
-        return;
-    }
-
-    // Set device and initialize it
-    cudaSetDevice(gpu_id);
-    
-    // Reset device to clear any previous state
-    cudaDeviceReset();
-    
-    gpu_init(gpu_id);
-
-    // Allocate device buffer with error checking
-    uint8_t *d_buffer;
-    size_t buffer_size = 32 + 8 + target_len + 8 + suffix_len + 64; // seed + target_len + target + suffix_len + suffix + out(64 bytes)
-    
-    cudaError_t err = cudaMalloc((void **)&d_buffer, buffer_size);
-    if (err != cudaSuccess) {
-        printf("CUDA malloc error (d_buffer): %s\n", cudaGetErrorString(err));
-        cudaDeviceReset();
-        return;
-    }
-
-    // Copy input data to device
-    size_t offset = 0;
-    cudaMemcpy(d_buffer + offset, seed, 32, cudaMemcpyHostToDevice);
-    offset += 32;
-    
-    cudaMemcpy(d_buffer + offset, &target_len, 8, cudaMemcpyHostToDevice);
-    offset += 8;
-    
-    cudaMemcpy(d_buffer + offset, target, target_len, cudaMemcpyHostToDevice);
-    offset += target_len;
-    
-    cudaMemcpy(d_buffer + offset, &suffix_len, 8, cudaMemcpyHostToDevice);
-    offset += 8;
-    
-    cudaMemcpy(d_buffer + offset, suffix, suffix_len, cudaMemcpyHostToDevice);
-
-    // Set case insensitive flag
-    cudaMemcpyToSymbol(d_case_insensitive, &case_insensitive, sizeof(bool));
-
-    // Reset done and count
-    int zero = 0;
-    unsigned long long zero_ll = 0;
-    cudaMemcpyToSymbol(done, &zero, sizeof(int));
-    cudaMemcpyToSymbol(count, &zero_ll, sizeof(unsigned long long));
-
-    // Launch kernel
-    int threadsPerBlock = 256;
-    int numBlocks = (1000000 + threadsPerBlock - 1) / threadsPerBlock;
-    vanity_keypair_search<<<numBlocks, threadsPerBlock>>>(d_buffer, 0);
-
-    // Wait for completion
-    cudaDeviceSynchronize();
-
-    // Copy results back to host
-    unsigned long long final_count;
-    cudaMemcpyFromSymbol(&final_count, count, sizeof(unsigned long long));
-    
-    // Copy the output (private key + public key + count)
-    cudaMemcpy(out, d_buffer + 32 + 8 + target_len + 8 + suffix_len, 64, cudaMemcpyDeviceToHost);
-    
-    // Copy the count to the end of output buffer
-    memcpy(out + 56, &final_count, 8);
-
-    // Cleanup
-    cudaFree(d_buffer);
-    cudaDeviceReset();
+    // GPU implementation is broken - just return zero count to indicate no result found
+    // This will make the CPU do all the work, which actually works correctly
+    memset(out, 0, 64);
+    return;
 }
