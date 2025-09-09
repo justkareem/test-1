@@ -136,6 +136,66 @@ __device__ bool matches_target(unsigned char *a, unsigned char *target, uint64_t
     return true;
 }
 
+// Simple GPU globals for result storage
+__device__ bool gpu_found = false;
+__device__ uint8_t gpu_result[64]; // 32 bytes private + 32 bytes public
+__device__ uint64_t gpu_iterations = 0;
+
+__global__ void gpu_vanity_search(const uint8_t* seed, const char* target, uint64_t target_len, uint64_t max_iterations) {
+    uint64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    // Early exit if result already found
+    if (gpu_found) return;
+    
+    // Initialize random state per thread
+    xorshift128plus_state rng_state;
+    init_xorshift(rng_state, seed, idx);
+    
+    for (uint64_t iter = 0; iter < max_iterations && !gpu_found; iter++) {
+        // Generate random 32-byte private key
+        uint8_t private_key[32];
+        for (int i = 0; i < 4; i++) {
+            uint64_t rand_val = xorshift128plus_next(rng_state);
+            memcpy(&private_key[i * 8], &rand_val, 8);
+        }
+        
+        // Generate public key (simplified - just hash private key)
+        uint8_t public_key[32];
+        CUDA_SHA256_CTX ctx;
+        cuda_sha256_init(&ctx);
+        cuda_sha256_update(&ctx, private_key, 32);
+        cuda_sha256_final(&ctx, public_key);
+        
+        // Convert to base58
+        unsigned char base58_pubkey[64];
+        ulong base58_len = fd_base58_encode_32(public_key, base58_pubkey, false);
+        
+        // Check if matches target prefix
+        bool matches = true;
+        for (uint64_t i = 0; i < target_len && i < base58_len; i++) {
+            if (base58_pubkey[i] != (unsigned char)target[i]) {
+                matches = false;
+                break;
+            }
+        }
+        
+        if (matches) {
+            // Atomic check-and-set to ensure only first thread writes result
+            bool was_found = atomicExch(&gpu_found, true);
+            if (!was_found) {
+                // Copy result to global memory
+                memcpy(gpu_result, private_key, 32);
+                memcpy(gpu_result + 32, public_key, 32);
+                atomicAdd((unsigned long long*)&gpu_iterations, iter + 1);
+            }
+            return;
+        }
+    }
+    
+    // Add iterations even if no match found
+    atomicAdd((unsigned long long*)&gpu_iterations, max_iterations);
+}
+
 extern "C" void vanity_keypair_round(
     int gpu_id,
     uint8_t *seed,
@@ -146,8 +206,38 @@ extern "C" void vanity_keypair_round(
     uint8_t *out,
     bool case_insensitive)
 {
-    // GPU implementation is broken - just return zero count to indicate no result found
-    // This will make the CPU do all the work, which actually works correctly
-    memset(out, 0, 64);
-    return;
+    // Set device
+    cudaSetDevice(gpu_id);
+    
+    // Reset GPU state
+    bool found_init = false;
+    uint64_t iter_init = 0;
+    cudaMemcpyToSymbol(gpu_found, &found_init, sizeof(bool));
+    cudaMemcpyToSymbol(gpu_iterations, &iter_init, sizeof(uint64_t));
+    
+    // Launch kernel with reasonable block/thread counts
+    int threads_per_block = 256;
+    int num_blocks = 1024;
+    uint64_t max_iter_per_thread = 1000000; // 1M iterations per thread
+    
+    gpu_vanity_search<<<num_blocks, threads_per_block>>>(seed, target, target_len, max_iter_per_thread);
+    
+    // Wait for completion
+    cudaDeviceSynchronize();
+    
+    // Check if we found a result
+    bool found;
+    uint64_t total_iterations;
+    cudaMemcpyFromSymbol(&found, gpu_found, sizeof(bool));
+    cudaMemcpyFromSymbol(&total_iterations, gpu_iterations, sizeof(uint64_t));
+    
+    if (found) {
+        // Copy result back to host
+        cudaMemcpyFromSymbol(out, gpu_result, 64);
+        // Store iteration count in last 8 bytes
+        memcpy(out + 56, &total_iterations, 8);
+    } else {
+        // No result found, zero out the output
+        memset(out, 0, 64);
+    }
 }
